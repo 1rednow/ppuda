@@ -83,6 +83,7 @@ def main():
         lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=3, gamma=0.1)
 
         for epoch in range(args.epochs):
+            print("Testing round {}, {}th epoch out of {}".format(i, epoch, args.epochs))
             # train for one epoch, printing every 10 iterations
             train_one_epoch(model, optimizer, data_loader, args.device, epoch, print_freq=args.log_interval)
             # update the learning rate
@@ -106,6 +107,7 @@ def main():
             print("Metric {}, min: {}".format(j, np.min(all_stats[:, j])))
             print("Metric {}, max: {}".format(j, np.max(all_stats[:, j])))
             print("Metric {}, std: {}".format(j, np.std(all_stats[:, j])))
+        torch.cuda.empty_cache()  # trying to avoid occasional issues with GPU memory
         print("Testing round {} finished".format(i))
 
     print("That's it!")
