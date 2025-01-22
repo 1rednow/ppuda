@@ -33,9 +33,10 @@ from ppuda.deepnets1m.genotypes import ViT, DARTS
 import ppuda.deepnets1m.genotypes as genotypes
 from ppuda.ghn.nn import GHN
 from penn import PennFudanDataset
-from engine import train_one_epoch, evaluate
+from engine import train_one_epoch, evaluate, EarlyStopping
 import utils as utils
 import transforms as T
+import numpy as np
 
 
 def main():
@@ -56,7 +57,7 @@ def main():
 
     batch_size = args.batch_size
     test_batch_size = args.test_batch_size
-    if args.arch == '0':
+    if args.arch == '0' or args.arch == '1':
         batch_size = 1
         test_batch_size = 1
 
@@ -79,7 +80,11 @@ def main():
     # and a learning rate scheduler
     lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=3, gamma=0.1)
 
+    all_stats = np.array([], dtype=np.float64).reshape(0,12)
+    # Early stopping
+    early_stopping = EarlyStopping(patience=10, delta=0.01)
     for epoch in range(args.epochs):
+        print("Training round epoch: {}".format(epoch))
         # train for one epoch, printing every 10 iterations
         train_one_epoch(model, optimizer, data_loader, args.device, epoch, print_freq=args.log_interval)
         # update the learning rate
@@ -91,8 +96,24 @@ def main():
             print('\nsaved the checkpoint to {}'.format(checkpoint_path))
 
         # evaluate on the test dataset
-        evaluate(model, data_loader_test, device=args.device)
+        evaluator = evaluate(model, data_loader_test, device=args.device)
+        all_stats = np.vstack([all_stats, evaluator.get_stats()])
+        print("all_Stats: {}".format(all_stats))
+        for j in range(len(all_stats[0])):
+            print("Metric {}, mean: {}".format(j, np.mean(all_stats[:, j])))
+            print("Metric {}, min: {}".format(j, np.min(all_stats[:, j])))
+            print("Metric {}, max: {}".format(j, np.max(all_stats[:, j])))
+            print("Metric {}, std: {}".format(j, np.std(all_stats[:, j])))
         torch.cuda.empty_cache()  # trying to avoid occasional issues with GPU memory
+        print("Training epoch {} finished".format(epoch))
+        precision = evaluator.get_stats()[1]
+        recall = evaluator.get_stats()[8]
+        val_score_f1 = 2 * (precision * recall) / (precision + recall)
+        print("Validation score F1: {}, precision: {}, recall: {}".format(val_score_f1, precision, recall))
+        early_stopping(val_score_f1, model)
+        if early_stopping.early_stop:
+            print("Early stopping")
+            break
 
     print("That's it!")
 
