@@ -36,6 +36,7 @@ from penn import PennFudanDataset
 from engine import train_one_epoch, evaluate
 import utils as utils
 import transforms as T
+import numpy as np
 
 
 def main():
@@ -69,30 +70,45 @@ def main():
         dataset_test, batch_size=test_batch_size, shuffle=False, num_workers=args.num_workers,
         collate_fn=utils.collate_fn)
 
-    # get the model using our helper function
-    model = get_model_detection(args, num_classes).to(args.device)
+    all_stats = np.array([], dtype=np.float64).reshape(0,12)
+    for i in range(50):
+        print("Testing round {}".format(i))
+        # get the model using our helper function
+        model = get_model_detection(args, num_classes).to(args.device)
 
-    # construct an optimizer
-    optimizer = torch.optim.SGD([p for p in model.parameters() if p.requires_grad],
-                                lr=args.lr, momentum=args.momentum, weight_decay=args.wd)
+        # construct an optimizer
+        optimizer = torch.optim.SGD([p for p in model.parameters() if p.requires_grad],
+                                        lr=args.lr, momentum=args.momentum, weight_decay=args.wd)
+        # and a learning rate scheduler
+        lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=3, gamma=0.1)
 
-    # and a learning rate scheduler
-    lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=3, gamma=0.1)
+        for epoch in range(args.epochs):
+            print("Testing round {}, {}th epoch out of {}".format(i, epoch, args.epochs))
+            # train for one epoch, printing every 10 iterations
+            train_one_epoch(model, optimizer, data_loader, args.device, epoch, print_freq=args.log_interval)
+            # update the learning rate
+            lr_scheduler.step()
 
-    for epoch in range(args.epochs):
-        # train for one epoch, printing every 10 iterations
-        train_one_epoch(model, optimizer, data_loader, args.device, epoch, print_freq=args.log_interval)
-        # update the learning rate
-        lr_scheduler.step()
+            if args.save:
+                checkpoint_path = os.path.join(args.save, 'checkpoint.pt')
+                torch.save({'state_dict': model.state_dict(), 'epoch': epoch}, checkpoint_path)
+                print('\nsaved the checkpoint to {}'.format(checkpoint_path))
 
-        if args.save:
-            checkpoint_path = os.path.join(args.save, 'checkpoint.pt')
-            torch.save({'state_dict': model.state_dict(), 'epoch': epoch}, checkpoint_path)
-            print('\nsaved the checkpoint to {}'.format(checkpoint_path))
-
+            # evaluate on the test dataset
+            #evaluator = evaluate(model, data_loader_test, device=args.device)
+            #print("evaluator: {}".format(evaluator.get_stats()))
+            torch.cuda.empty_cache()  # trying to avoid occasional issues with GPU memory
         # evaluate on the test dataset
-        evaluate(model, data_loader_test, device=args.device)
+        evaluator = evaluate(model, data_loader_test, device=args.device)
+        all_stats = np.vstack([all_stats, evaluator.get_stats()])
+        print("all_Stats: {}".format(all_stats))
+        for j in range(len(all_stats[0])):
+            print("Metric {}, mean: {}".format(j, np.mean(all_stats[:, j])))
+            print("Metric {}, min: {}".format(j, np.min(all_stats[:, j])))
+            print("Metric {}, max: {}".format(j, np.max(all_stats[:, j])))
+            print("Metric {}, std: {}".format(j, np.std(all_stats[:, j])))
         torch.cuda.empty_cache()  # trying to avoid occasional issues with GPU memory
+        print("Testing round {} finished".format(i))
 
     print("That's it!")
 
