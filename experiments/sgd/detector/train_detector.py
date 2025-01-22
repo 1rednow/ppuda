@@ -54,13 +54,19 @@ def main():
     dataset = torch.utils.data.Subset(dataset, indices[:-50])
     dataset_test = torch.utils.data.Subset(dataset_test, indices[-50:])
 
+    batch_size = args.batch_size
+    test_batch_size = args.test_batch_size
+    if args.arch == 0:
+        batch_size = 32
+        test_batch_size = 32
+
     # define training and validation data loaders
     data_loader = torch.utils.data.DataLoader(
-        dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers,
+        dataset, batch_size=batch_size, shuffle=True, num_workers=args.num_workers,
         collate_fn=utils.collate_fn)
 
     data_loader_test = torch.utils.data.DataLoader(
-        dataset_test, batch_size=args.test_batch_size, shuffle=False, num_workers=args.num_workers,
+        dataset_test, batch_size=test_batch_size, shuffle=False, num_workers=args.num_workers,
         collate_fn=utils.collate_fn)
 
     # get the model using our helper function
